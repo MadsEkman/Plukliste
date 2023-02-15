@@ -1,47 +1,93 @@
-﻿using Plukliste;
+﻿using System.Runtime.CompilerServices;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+
+namespace Plukliste;
 //Eksempel på funktionel kodning hvor der kun bliver brugt et model lag
 
-//Arrange
-char readKey = ' ';
-List<string> files;
-var index = -1;
-var standardColor = Console.ForegroundColor;
-Directory.CreateDirectory("import");
-
-if (!Directory.Exists("export"))
+class Program
 {
-    Console.WriteLine("Directory \"export\" not found");
-    Console.ReadLine();
-    return;
-}
-files = Directory.EnumerateFiles("export").ToList();
+    const string _exportPath = "export";
+    const string _importPath = "import";
+    const string _templatePath = "templates";
+    const string _printPath = "print";
+    static List<string> _files = GetFiles(_exportPath);
+    static int _currentFileIndex = 0;
 
-//ACT
-while (readKey != 'Q')
-{
-    if(files.Count == 0)
+    static List<string> GetFiles(string path)
     {
-        Console.WriteLine("No files found.");
-        
-    } else
+        Directory.CreateDirectory("export");
+        return Directory.EnumerateFiles("export").Where(file => file.EndsWith(".XML")).ToList();
+    }
+
+    static void Main(String[] args)
+    {     
+        char menuAction = ' ';
+        while (menuAction != 'Q')
+        {
+            Pluklist? pluklist = PrintPlukseddelToScreen();
+
+            menuAction = PrintMenuAndGetAction(pluklist);
+            Console.Clear();
+            switch (menuAction)
+            {
+                case 'G':
+                    _files = GetFiles(_exportPath);
+                    _currentFileIndex = 0;
+                    PrintStatusLine("Pluklister genindlæst");
+                    break;
+                case 'F':
+                    if (_currentFileIndex > 0) _currentFileIndex--;
+                    break;
+                case 'N':
+                    if (_currentFileIndex < _files.Count - 1) _currentFileIndex++;
+                    break;
+                case 'A':
+                    //Move files to import directory
+                    FinishPlukseddel();
+                    break;
+                case 'P':
+                    PrintPapers(pluklist);
+                    break;
+            }
+        }
+    }
+
+    
+
+    private static Pluklist? PrintPlukseddelToScreen()
     {
-        if (index == -1) index = 0;
+        if (_files.Count == 0)
+        {
+            Console.WriteLine("No files found.");
+            return null;
+        }
+        Console.WriteLine($"Plukliste {_currentFileIndex + 1} af {_files.Count}");
+        Console.WriteLine($"\nfile: {_files[_currentFileIndex]}");
 
-        Console.WriteLine($"Plukliste {index+1} af {files.Count}");
-        Console.WriteLine($"\nfile: {files[index]}");
+        Pluklist? plukliste = ReadPlukliste();
+        PrintPluklist(plukliste);
+        return plukliste;
+    }
 
-        //read file
-        FileStream file = File.OpenRead(files[index]);
-        System.Xml.Serialization.XmlSerializer xmlSerializer =
-            new System.Xml.Serialization.XmlSerializer(typeof(Pluklist));
-        var plukliste = (Pluklist?)xmlSerializer.Deserialize(file);
-        
+    private static Pluklist? ReadPlukliste()
+    {
+        using (var file = File.OpenRead(_files[_currentFileIndex]))
+        {
+            System.Xml.Serialization.XmlSerializer xmlSerializer =
+                new System.Xml.Serialization.XmlSerializer(typeof(Pluklist));
+            return (Pluklist?)xmlSerializer.Deserialize(file);
+        }
+    }
+
+    private static void PrintPluklist(Pluklist? plukliste)
+    {
         //print plukliste
         if (plukliste != null && plukliste.Lines != null)
         {
             Console.WriteLine("\n{0, -13}{1}", "Name:", plukliste.Name);
             Console.WriteLine("{0, -13}{1}", "Forsendelse:", plukliste.Forsendelse);
-            //TODO: Add adresse to screen print
+            Console.WriteLine("{0, -13}{1}", "Adresse:", plukliste.Adresse);
 
             Console.WriteLine("\n{0,-7}{1,-9}{2,-20}{3}", "Antal", "Type", "Produktnr.", "Navn");
             foreach (var item in plukliste.Lines)
@@ -49,70 +95,102 @@ while (readKey != 'Q')
                 Console.WriteLine("{0,-7}{1,-9}{2,-20}{3}", item.Amount, item.Type, item.ProductID, item.Title);
             }
         }
-        file.Close();
     }
 
-    //Print options
-    Console.WriteLine("\n\nOptions:");
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.Write("Q");
-    Console.ForegroundColor = standardColor;
-    Console.WriteLine("uit");
-    if( index >= 0)
+    static char PrintMenuAndGetAction(Pluklist? pluklist)
     {
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.Write("A");
-        Console.ForegroundColor = standardColor;
-        Console.WriteLine("fslut plukseddel");
-    }
-    if( index > 0)
-    {
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.Write("F");
-        Console.ForegroundColor = standardColor;
-        Console.WriteLine("orrige plukseddel");
-    }
-    if (index < files.Count - 1)
-    {
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.Write("N");
-        Console.ForegroundColor = standardColor;
-        Console.WriteLine("æste plukseddel");
-    }
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.Write("G");
-    Console.ForegroundColor = standardColor;
-    Console.WriteLine("enindlæs pluksedler");
+        //Print options
+        Console.WriteLine("\n\nOptions:");
 
-    readKey = Console.ReadKey().KeyChar;
-    if (readKey >= 'a') readKey -= (char)('a' - 'A'); //HACK: To upper
-    Console.Clear();
-    
-    Console.ForegroundColor = ConsoleColor.Red; //status in red
-    switch (readKey)
-    {
-        case 'G':
-            files = Directory.EnumerateFiles("export").ToList();
-            index = -1;
-            Console.WriteLine("Pluklister genindlæst");
-            break;
-        case 'F':
-            if (index > 0) index--;
-            break;
-        case 'N':
-            if (index < files.Count - 1) index++;
-            break;
-        case 'A':
-            //Move files to import directory
-            var filewithoutPath = files[index].Substring(files[index].LastIndexOf('\\'));
-            File.Move(files[index], string.Format(@"import\\{0}", filewithoutPath));
-            Console.WriteLine($"Plukseddel {files[index]} afsluttet.");
-            files.Remove(files[index]);
-            if (index == files.Count) index--;
-            break;
-    }
-    Console.ForegroundColor = standardColor; //reset color
+        if (pluklist != null)
+        {
+            if (pluklist.Lines.Any(x => x.Type == ItemType.Print))
+                PrintMenuOption("Print vejledninger");
+            PrintMenuOption("Afslut plukseddel\n");
+        }
+        if (_currentFileIndex > 0)
+            PrintMenuOption("Forrige plukseddel");
 
+        if (_currentFileIndex < _files.Count - 1)
+            PrintMenuOption("Næste plukseddel");
+
+        Console.WriteLine();
+        PrintMenuOption("Genindlæs pluksedler");
+        PrintMenuOption("Quit");
+        var readKey = Console.ReadKey().KeyChar;
+        if (readKey >= 'a') readKey -= (char)('a' - 'A'); //HACK: To upper
+        return readKey;
+    }
+
+    static private void PrintMenuOption(string text, int highlightPosition = 0)
+    {
+        if (highlightPosition < 0 || highlightPosition >= text.Length) throw new IndexOutOfRangeException($"highlightPosition {highlightPosition} out of index in {text}");
+        var currentColor = Console.ForegroundColor;
+        if (highlightPosition > 0) Console.Write(text.Substring(0, highlightPosition));
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.Write(text.Substring(highlightPosition, 1));
+        Console.ForegroundColor = currentColor;
+        Console.WriteLine(text.Substring(highlightPosition+1));
+    }
+
+    static private void PrintStatusLine(string text)
+    {
+        var currentColor = Console.ForegroundColor;
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine(text);
+        Console.ForegroundColor = currentColor;
+    }
+    private static void FinishPlukseddel()
+    {
+        Directory.CreateDirectory("import");
+        var filewithoutPath = _files[_currentFileIndex].Substring(_files[_currentFileIndex].LastIndexOf('\\'));
+        File.Move(_files[_currentFileIndex], string.Format(@"import\\{0}", filewithoutPath));
+        PrintStatusLine($"Plukseddel {_files[_currentFileIndex]} afsluttet.");
+        _files.Remove(_files[_currentFileIndex]);
+        if (_currentFileIndex == _files.Count) _currentFileIndex--;
+    }
+
+    private static void PrintPapers(Pluklist? pluklist)
+    {
+        if (pluklist == null) return;
+        pluklist.Lines.ForEach(x =>
+        {
+            if (x.Type == ItemType.Print)
+                PrintPaper(x.ProductID, pluklist);
+        });
+    }
+
+    private static void PrintPaper(string template, Pluklist pluklist)
+    {
+        try
+        {
+            var text = File.ReadAllText($"{_templatePath}\\{template}.html");
+
+            text = text.Replace("[Adresse]", pluklist.Adresse);
+            text = text.Replace("[Name]", pluklist.Name);
+
+            //Create plukliste
+            StringBuilder stringBuilder = new StringBuilder();
+            stringBuilder.Append("<table><tr><th>Antal</th><th>ProduktId</th><th>Beskrivelse</th></tr>");
+            pluklist.Lines.ForEach(x =>
+            {
+                if (x.Type == ItemType.Fysisk)
+                    stringBuilder.Append($"<tr><td>{x.Amount}</td><td>{x.ProductID}</td><td>{x.Title}</td></tr>");
+            });
+            stringBuilder.Append("</table>");
+            text = text.Replace("[Plukliste]", stringBuilder.ToString());
+
+            //Save Print
+            Directory.CreateDirectory(_printPath);
+            var filename = Path.GetFileName(_files[_currentFileIndex]);
+            filename = $"{filename.Substring(0, filename.IndexOf("_") + 1)}{template}.html";
+            File.WriteAllText($"{_printPath}\\{filename}", text);
+            PrintStatusLine($"{filename} printet");
+        }
+        catch (FileNotFoundException)
+        {
+            PrintStatusLine($"Template {template} not found and is not printet");
+            return;
+        }
+    }
 }
-
-
